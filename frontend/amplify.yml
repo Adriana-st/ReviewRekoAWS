@@ -1,15 +1,17 @@
 version: 1
-frontend:
-  phases:
-    # IMPORTANT - Please verify your build commands
-    build:
-      commands: []
-  artifacts:
-    # IMPORTANT
-    # That's build output directory (none for pure HTML)
-    # "." refers to the current working directory (which will be /frontend)
-    baseDirectory: .
-    files:
-      - '**/*' # you must use **/* instead of /* so it recursively grabs all your CSS, JS, and nested subfolders, not just the root files
-  cache:
-    paths: []
+applications:
+  - appRoot: frontend # folder containing frontend
+    frontend:
+      phases:
+        # IMPORTANT - Please verify your build commands
+        build:
+          commands: []
+      artifacts:
+        # IMPORTANT
+        # That's build output directory (none for pure HTML)
+        # "." refers to the current working directory (which will be /frontend)
+        baseDirectory: .
+        files:
+          - '**/*' # you must use **/* instead of /* so it recursively grabs all your CSS, JS, and nested subfolders, not just the root files
+      cache:
+        paths: [] # put node_modules/**/* in here when needed
