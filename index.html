@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Review System</title>
+  <style>
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+    nav a { margin-right: 16px; cursor: pointer; text-decoration: underline; color: blue; }
+    nav a.active { font-weight: bold; color: black; text-decoration: none; }
+    .page { display: none; }
+    .page.active { display: block; }
+    fieldset { margin-bottom: 12px; border: 1px solid #ccc; padding: 10px; }
+    legend { font-weight: bold; }
+    label { display: block; margin-bottom: 4px; font-size: 14px; }
+    input[type=text], input[type=number], select, textarea {
+      width: 100%; padding: 6px; font-size: 14px; box-sizing: border-box;
+    }
+    input[type=file] { font-size: 14px; }
+    button { padding: 8px 20px; font-size: 14px; cursor: pointer; }
+    #status-msg { margin-top: 10px; font-size: 14px; }
+    .review-card { border: 1px solid #ccc; padding: 12px; margin-bottom: 12px; }
+    .review-card img { max-width: 200px; display: block; margin-top: 8px; }
+    .review-card .labels { font-size: 12px; color: #555; margin-top: 4px; }
+    .rejected-card { border: 1px solid #f99; padding: 12px; margin-bottom: 12px; background: #fff5f5; }
+    .stars { color: orange; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+    th { background: #f5f5f5; }
+    .badge-approved { color: green; font-weight: bold; }
+    .badge-rejected { color: red; font-weight: bold; }
+    #preview-img { max-width: 200px; margin-top: 8px; display: none; }
+  </style>
+</head>
+<body>
+
+<h2>Smart Review System</h2>
+
+<nav>
+  <a id="nav-submit" class="active" onclick="showPage('submit')">Submit Review</a>
+  <a id="nav-gallery" onclick="showPage('gallery')">Browse Reviews</a>
+  <a id="nav-admin" onclick="showPage('admin')">Admin</a>
+</nav>
+
+<hr/>
+
+<!-- ==================== SUBMIT PAGE ==================== -->
+<div id="page-submit" class="page active">
+  <h3>Submit a Product Review</h3>
+
+  <fieldset>
+    <legend>Your Details</legend>
+    <label>Your name</label>
+    <input type="text" id="customerName" placeholder="e.g. Emma Byrne"/>
+  </fieldset>
+
+  <fieldset>
+    <legend>Product</legend>
+    <label>Product name</label>
+    <input type="text" id="productName" placeholder="e.g. Nike Air Max"/>
+
+    <label style="margin-top:8px">Category</label>
+    <select id="productCategory">
+      <option value="">-- Select category --</option>
+      <option value="footwear">Footwear</option>
+      <option value="electronics">Electronics</option>
+      <option value="clothing">Clothing</option>
+      <option value="food">Food &amp; Drink</option>
+      <option value="sports">Sports</option>
+      <option value="homeware">Homeware</option>
+      <option value="other">Other</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Your Review</legend>
+    <label>Star rating</label>
+    <select id="starRating">
+      <option value="5">★★★★★ (5)</option>
+      <option value="4">★★★★☆ (4)</option>
+      <option value="3">★★★☆☆ (3)</option>
+      <option value="2">★★☆☆☆ (2)</option>
+      <option value="1">★☆☆☆☆ (1)</option>
+    </select>
+
+    <label style="margin-top:8px">Review text</label>
+    <textarea id="reviewText" rows="4" placeholder="Write your review here..."></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>Product Image</legend>
+    <label>Upload a photo of the product</label>
+    <input type="file" id="imageFile" accept="image/*" onchange="previewImage(this)"/>
+    <img id="preview-img" alt="Preview"/>
+  </fieldset>
+
+  <button onclick="submitReview()">Submit Review</button>
+
+  <div id="status-msg"></div>
+</div>
+
+<!-- ==================== GALLERY PAGE ==================== -->
+<div id="page-gallery" class="page">
+  <h3>Browse Approved Reviews</h3>
+
+  <label>Filter by category:
+    <select id="filter-category" onchange="loadGallery()">
+      <option value="">All categories</option>
+      <option value="footwear">Footwear</option>
+      <option value="electronics">Electronics</option>
+      <option value="clothing">Clothing</option>
+      <option value="food">Food &amp; Drink</option>
+      <option value="sports">Sports</option>
+      <option value="homeware">Homeware</option>
+      <option value="other">Other</option>
+    </select>
+  </label>
+
+  <br/><br/>
+  <div id="gallery-results">
+    <p>Click a category or load all reviews.</p>
+  </div>
+  <button onclick="loadGallery()">Load Reviews</button>
+</div>
+
+<!-- ==================== ADMIN PAGE ==================== -->
+<div id="page-admin" class="page">
+  <h3>Admin — All Submissions</h3>
+  <p style="font-size:13px;color:#666">Shows all reviews including rejected ones with rejection reasons.</p>
+  <button onclick="loadAdmin()">Load All Records</button>
+  <br/><br/>
+  <div id="admin-results"></div>
+</div>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────────────────────────────
+  // Replace this with your real API Gateway base URL once deployed
+  const API_BASE = 'https://ptyne4n0cl.execute-api.eu-west-1.amazonaws.com/prod';
+  // ────────────────────────────────────────────────────────────────────────────
+
+  // Navigation
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.getElementById('nav-' + name).classList.add('active');
+  }
+
+  // Image preview
+  function previewImage(input) {
+    const img = document.getElementById('preview-img');
+    if (input.files && input.files[0]) {
+      img.src = URL.createObjectURL(input.files[0]);
+      img.style.display = 'block';
+    }
+  }
+
+  // ── SUBMIT REVIEW ───────────────────────────────────────────────────────────
+  async function submitReview() {
+    const statusEl = document.getElementById('status-msg');
+    statusEl.textContent = '';
+
+    const customerName   = document.getElementById('customerName').value.trim();
+    const productName    = document.getElementById('productName').value.trim();
+    const productCategory = document.getElementById('productCategory').value;
+    const starRating     = document.getElementById('starRating').value;
+    const reviewText     = document.getElementById('reviewText').value.trim();
+    const imageFile      = document.getElementById('imageFile').files[0];
+
+    // Basic validation
+    if (!customerName || !productName || !productCategory || !reviewText || !imageFile) {
+      statusEl.textContent = 'Please fill in all fields and select an image.';
+      return;
+    }
+
+    statusEl.textContent = 'Step 1/3 — Getting upload URL...';
+
+    try {
+      // Step 1: Get presigned URL from Lambda via API Gateway
+      const urlRes = await fetch(`${API_BASE}/upload-url?filename=${encodeURIComponent(imageFile.name)}&contentType=${encodeURIComponent(imageFile.type)}`);
+      if (!urlRes.ok) throw new Error('Failed to get upload URL');
+      const { uploadUrl, imageKey } = await urlRes.json();
+
+      // Step 2: Upload image directly to S3 using the presigned URL
+      statusEl.textContent = 'Step 2/3 — Uploading image to S3...';
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: imageFile,
+        headers: { 'Content-Type': imageFile.type }
+      });
+      if (!uploadRes.ok) throw new Error('Image upload to S3 failed');
+
+      // Step 3: POST review metadata to API Gateway
+      statusEl.textContent = 'Step 3/3 — Submitting review...';
+      const reviewRes = await fetch(`${API_BASE}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerName,
+          productName,
+          productCategory,
+          starRating: parseInt(starRating),
+          reviewText,
+          imageKey
+        })
+      });
+      if (!reviewRes.ok) throw new Error('Failed to submit review');
+
+      statusEl.textContent = 'Review submitted! It will appear in the gallery once moderation is complete (usually a few seconds).';
+      // Reset form
+      document.getElementById('customerName').value = '';
+      document.getElementById('productName').value = '';
+      document.getElementById('productCategory').value = '';
+      document.getElementById('reviewText').value = '';
+      document.getElementById('imageFile').value = '';
+      document.getElementById('preview-img').style.display = 'none';
+
+    } catch (err) {
+      statusEl.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  // ── GALLERY ─────────────────────────────────────────────────────────────────
+  async function loadGallery() {
+    const resultsEl = document.getElementById('gallery-results');
+    const category  = document.getElementById('filter-category').value;
+    resultsEl.textContent = 'Loading...';
+
+    try {
+      const url = category
+        ? `${API_BASE}/reviews?category=${encodeURIComponent(category)}`
+        : `${API_BASE}/reviews`;
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to load reviews');
+      const reviews = await res.json();
+
+      if (!reviews.length) {
+        resultsEl.textContent = 'No approved reviews found.';
+        return;
+      }
+
+      resultsEl.innerHTML = reviews.map(r => `
+        <div class="review-card">
+          <strong>${escHtml(r.productName)}</strong>
+          <span class="stars">${'★'.repeat(r.starRating)}${'☆'.repeat(5 - r.starRating)}</span>
+          &nbsp;— ${escHtml(r.customerName)}<br/>
+          <em style="font-size:12px;color:#888">${escHtml(r.productCategory)}</em><br/>
+          <p style="margin:6px 0">${escHtml(r.reviewText)}</p>
+          ${r.aiDescription ? `<p style="font-size:12px;color:#555;font-style:italic">${escHtml(r.aiDescription)}</p>` : ''}
+          ${r.imageKey ? `<img src="${escHtml(r.imageKey)}" alt="Product photo"/>` : ''}
+          ${r.labelsDetected && r.labelsDetected.length
+            ? `<div class="labels">Detected: ${r.labelsDetected.join(', ')}</div>`
+            : ''}
+        </div>
+      `).join('');
+
+    } catch (err) {
+      resultsEl.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  // ── ADMIN ───────────────────────────────────────────────────────────────────
+  async function loadAdmin() {
+    const resultsEl = document.getElementById('admin-results');
+    resultsEl.textContent = 'Loading...';
+
+    try {
+      const res = await fetch(`${API_BASE}/reviews?admin=true`);
+      if (!res.ok) throw new Error('Failed to load records');
+      const records = await res.json();
+
+      if (!records.length) {
+        resultsEl.textContent = 'No records found.';
+        return;
+      }
+
+      resultsEl.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Rating</th>
+              <th>Status</th>
+              <th>Reason / Flags</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${records.map(r => `
+              <tr>
+                <td>${escHtml(r.customerName)}</td>
+                <td>${escHtml(r.productName)}</td>
+                <td>${escHtml(r.productCategory)}</td>
+                <td>${r.starRating}★</td>
+                <td class="${r.status === 'APPROVED' ? 'badge-approved' : 'badge-rejected'}">${r.status}</td>
+                <td>${r.reason !== 'none' ? escHtml(r.reason) : ''}
+                    ${r.moderationFlags && r.moderationFlags.length ? r.moderationFlags.join(', ') : ''}</td>
+                <td style="font-size:12px">${r.timestamp ? r.timestamp.slice(0,16).replace('T',' ') : ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+
+    } catch (err) {
+      resultsEl.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  // ── HELPERS ─────────────────────────────────────────────────────────────────
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+
+</body>
+</html>
