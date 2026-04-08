@@ -10,4 +10,4 @@ frontend:
     files:
       - '**/*'
   cache:
-    paths: []]
+    paths: []
