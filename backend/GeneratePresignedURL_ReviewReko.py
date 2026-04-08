@@ -2,49 +2,52 @@ import boto3
 import json
 import uuid
 import os
-from botocore.config import Config
+import base64
 
-# Force signature version 4 and correct region
-s3 = boto3.client(
-    's3',
-    region_name='eu-west-1',
-    config=Config(signature_version='s3v4')
-)
+s3 = boto3.client('s3', region_name='eu-west-1')
 
 UPLOAD_BUCKET = os.environ['UPLOAD_BUCKET']
 
 
 def lambda_handler(event, context):
     try:
-        params = event.get('queryStringParameters') or {}
-        filename = params.get('filename', '')
-        content_type = params.get('contentType', 'image/jpeg')
+        # Handle CORS preflight
+        if event.get('httpMethod') == 'OPTIONS':
+            return response(200, {})
 
-        if not filename:
-            return response(400, {'error': 'filename is required'})
+        body = event.get('body', '')
+        is_base64 = event.get('isBase64Encoded', False)
 
+        if is_base64:
+            image_data = base64.b64decode(body)
+        else:
+            image_data = body.encode('utf-8') if isinstance(body, str) else body
+
+        # Get content type from headers
+        headers = event.get('headers') or {}
+        content_type = headers.get('content-type') or headers.get('Content-Type') or 'image/jpeg'
+
+        # Validate image type
         allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
         if content_type not in allowed_types:
             return response(400, {'error': 'Only image files are allowed'})
 
-        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'jpg'
+        ext = content_type.split('/')[-1]
+        if ext == 'jpeg':
+            ext = 'jpg'
         image_key = f'uploads/{uuid.uuid4()}.{ext}'
 
-        # Generate presigned URL with explicit content type condition
-        upload_url = s3.generate_presigned_url(
-            ClientMethod='put_object',
-            Params={
-                'Bucket': UPLOAD_BUCKET,
-                'Key': image_key,
-                'ContentType': content_type
-            },
-            ExpiresIn=300
+        # Upload directly to S3 from Lambda — no CORS issue
+        s3.put_object(
+            Bucket=UPLOAD_BUCKET,
+            Key=image_key,
+            Body=image_data,
+            ContentType=content_type
         )
 
         return response(200, {
-            'uploadUrl': upload_url,
             'imageKey': image_key,
-            'contentType': content_type
+            'message': 'Image uploaded successfully'
         })
 
     except Exception as e:
@@ -59,7 +62,7 @@ def response(status_code, body):
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': '*',
-            'Access-Control-Allow-Methods': 'GET,OPTIONS'
+            'Access-Control-Allow-Methods': 'POST,OPTIONS'
         },
         'body': json.dumps(body)
     }
