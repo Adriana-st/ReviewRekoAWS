@@ -141,6 +141,9 @@ import Layout from '../layouts/Layout.astro';
 </Layout>
 
 <style>
+  /* If you’re just using the default theme with no customizations (e.g. by using things like @theme, @custom-variant, @plugin, etc…), you can import tailwindcss directly: */
+  @reference "tailwindcss";
+  
   /* ── Page visibility — toggled by JS ── */
   .page        { display: none; }
   .page.active { display: block; }
