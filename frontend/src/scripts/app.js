@@ -159,8 +159,10 @@
 
         const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to load reviews');
-        const reviews = await res.json();
 
+        // parse the outer envelope, then parse the body string
+        const envelope = await res.json();
+        const reviews = JSON.parse(envelope.body);
         // if (!reviews.length) {
         //   resultsEl.textContent = 'No approved reviews found.';
         //   return;
@@ -183,7 +185,8 @@
       `).join('');
 
       } catch (err) {
-        resultsEl.textContent = 'Error: ' + err.message;
+        resultsEl.textContent = 'Sorry, something went wrong'
+        console.log(err);
       }
     }
 
