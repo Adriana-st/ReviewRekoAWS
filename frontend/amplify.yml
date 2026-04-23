@@ -1,17 +1,27 @@
-version: 1
+# Amplify needs to know how to build an Astro project
+version: 2
 applications:
   - appRoot: frontend # folder containing frontend
     frontend:
       phases:
+        preBuild:
+          commands:
+          #  Astro requires Node 18+. In Amplify console → App settings → Build settings → set Node.js version to 18 or 20
+          # setting  Node version explicitly:
+            - nvm use 20
+          # installing dependencies cleanly:
+            - npm ci
         # IMPORTANT - Please verify your build commands
         build:
-          commands: []
+          commands:
+            - npm run build
       artifacts:
         # IMPORTANT
         # That's build output directory (none for pure HTML)
         # "." refers to the current working directory (which will be /frontend)
-        baseDirectory: .
+        baseDirectory: dist
         files:
           - '**/*' # you must use **/* instead of /* so it recursively grabs all your CSS, JS, and nested subfolders, not just the root files
       cache:
-        paths: [] # put node_modules/**/* in here when needed
+        paths: 
+          - node_modules/**/* # put node_modules/**/* in here when needed
