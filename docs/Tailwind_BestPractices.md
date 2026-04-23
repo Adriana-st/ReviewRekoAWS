@@ -1,4 +1,4 @@
-### MAKE SURE TO FOLLOW Tailwind CSS Standards PRECISELY:
+### MAKE SURE TO FOLLOW Tailwind CSS v4 Standards PRECISELY:
 - **No Arbitrary Values**: Strictly avoid arbitrary square-bracket notation for spacing, sizing, or typography (e.g., `text-[2.5rem]`, `w-[46.8%]`, `mb-[6rem]`).
 - **Use Design Tokens**: Use standard Tailwind utility classes (e.g., `text-4xl`, `w-1/2`, `mb-24`) to maintain design consistency and scale.
 - **Nearest Neighbor Principle**: If a specific pixel value is requested, map it to the nearest standard Tailwind scale value.
