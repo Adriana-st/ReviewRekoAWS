@@ -4,21 +4,24 @@
     const navLinks = [
         { id: 'nav-submit', page: 'submit' },
         { id: 'nav-gallery', page: 'gallery' },
-        { id: 'nav-admin', page: 'admin' }
+        // { id: 'nav-admin', page: 'admin' }
     ];
 
     // attach event listeners
     navLinks.forEach(link => {
       const element = document.getElementById(link.id);
       if (element) {
-        element.addEventListener('click', showPage(link.page));
+        // ❌ This CALLS showPage right now, at page load, for every nav link
+        // element.addEventListener('click', showPage(link.page));
+        // ✅ This passes a function that will call showPage when clicked
+        element.addEventListener('click', () => showPage(link.page)); 
       }
     });
 
 
     const input = document.getElementById('imageFile');
     if (input) {
-      input.addEventListener('change', previewImage(this));
+      input.addEventListener('change', (e) => previewImage(e.target));
     }
 
 
@@ -68,7 +71,7 @@
     }
 
     // Image preview
-    function previewImage(input) {
+    function previewImage(input) {  // input is now e.target, a real DOM element
       const img = document.getElementById('preview-img');
       if (input.files && input.files[0]) {
         img.src = URL.createObjectURL(input.files[0]);
