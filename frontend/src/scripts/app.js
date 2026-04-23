@@ -146,28 +146,33 @@
     // ── GALLERY ─────────────────────────────────────────────────────────────────
     async function loadGallery() {
       const resultsEl = document.getElementById('gallery-results');
-      const category = document.getElementById('filter-category').value;
+      // const category = document.getElementById('filter-category').value;
       resultsEl.textContent = 'Loading...';
 
       try {
-        const url = category
-          ? `${API_BASE}/reviews?category=${encodeURIComponent(category)}`
-          : `${API_BASE}/reviews`;
+        // const url = category
+        //   ? `${API_BASE}/reviews?category=${encodeURIComponent(category)}`
+        //   : `${API_BASE}/reviews`;
+
+
+        const url = `${API_BASE}/reviews`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to load reviews');
         const reviews = await res.json();
 
-        if (!reviews.length) {
-          resultsEl.textContent = 'No approved reviews found.';
-          return;
-        }
+        // if (!reviews.length) {
+        //   resultsEl.textContent = 'No approved reviews found.';
+        //   return;
+        // }
+
+        //<em style="font-size:12px;color:#888">${escHtml(r.productCategory)}</em><br/>
 
         resultsEl.innerHTML = reviews.map(r => `
         <div class="review-card">
           <span class="stars">${'★'.repeat(r.starRating)}${'☆'.repeat(5 - r.starRating)}</span>
           &nbsp;— ${escHtml(r.customerName)}<br/>
-          <em style="font-size:12px;color:#888">${escHtml(r.productCategory)}</em><br/>
+          
           <p style="margin:6px 0">${escHtml(r.reviewText)}</p>
           ${r.aiDescription ? `<p style="font-size:12px;color:#555;font-style:italic">${escHtml(r.aiDescription)}</p>` : ''}
           ${r.imageKey ? `<img src="${escHtml(r.imageKey)}" alt="Product photo"/>` : ''}
