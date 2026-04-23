@@ -1,0 +1,110 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+---
+<Layout>
+
+
+  <h2>Smart Review System</h2>
+
+  <nav>
+    <a id="nav-submit" class="active">Submit Review</a>
+    <a id="nav-gallery">Browse Reviews</a>
+    <a id="nav-admin">Admin</a>
+  </nav>
+
+  <hr />
+
+  <!-- ==================== SUBMIT PAGE ==================== -->
+  <div id="page-submit" class="page active">
+    <h3>Submit a Product Review</h3>
+
+    <fieldset>
+      <legend>Your Details</legend>
+      <label>Your name</label>
+      <input type="text" id="customerName" placeholder="e.g. Emma Byrne" />
+    </fieldset>
+
+    <fieldset>
+      <legend>Product</legend>
+      <label>Product name</label>
+      <input type="text" id="productName" placeholder="e.g. Nike Air Max" />
+
+      <label style="margin-top:8px">Category</label>
+      <select id="productCategory">
+        <option value="">-- Select category --</option>
+        <option value="footwear">Footwear</option>
+        <option value="electronics">Electronics</option>
+        <option value="clothing">Clothing</option>
+        <option value="food">Food &amp; Drink</option>
+        <option value="sports">Sports</option>
+        <option value="homeware">Homeware</option>
+        <option value="other">Other</option>
+      </select>
+    </fieldset>
+
+    <fieldset>
+      <legend>Your Review</legend>
+      <label>Star rating</label>
+      <select id="starRating">
+        <option value="5">★★★★★ (5)</option>
+        <option value="4">★★★★☆ (4)</option>
+        <option value="3">★★★☆☆ (3)</option>
+        <option value="2">★★☆☆☆ (2)</option>
+        <option value="1">★☆☆☆☆ (1)</option>
+      </select>
+
+      <label style="margin-top:8px">Review text</label>
+      <textarea id="reviewText" rows="4" placeholder="Write your review here..."></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>Product Image</legend>
+      <label>Upload a photo of the product</label>
+      <input type="file" id="imageFile" accept="image/*" />
+      <img id="preview-img" alt="Preview" />
+    </fieldset>
+
+    <button id="btn-submit-review">Submit Review</button>
+
+    <div id="status-msg"></div>
+  </div>
+
+  <!-- ==================== GALLERY PAGE ==================== -->
+  <div id="page-gallery" class="page">
+    <h3>Browse Approved Reviews</h3>
+
+    <label>Filter by category:
+      <select id="filter-category">
+        <option value="">All categories</option>
+        <option value="footwear">Footwear</option>
+        <option value="electronics">Electronics</option>
+        <option value="clothing">Clothing</option>
+        <option value="food">Food &amp; Drink</option>
+        <option value="sports">Sports</option>
+        <option value="homeware">Homeware</option>
+        <option value="other">Other</option>
+      </select>
+    </label>
+
+    <br /><br />
+    <div id="gallery-results">
+      <p>Click a category or load all reviews.</p>
+    </div>
+    <button id="btn-load-gallery">Load Reviews</button>
+
+  </div>
+
+  <!-- ==================== ADMIN PAGE ==================== -->
+  <!-- <div id="page-admin" class="page">
+    <h3>Admin — All Submissions</h3>
+    <p style="font-size:13px;color:#666">Shows all reviews including rejected ones with rejection reasons.</p>
+    <button onclick="loadAdmin()">Load All Records</button>
+    <br /><br />
+    <div id="admin-results"></div>
+  </div> -->
+
+
+
+
+</Layout>
