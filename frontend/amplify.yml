@@ -1,5 +1,5 @@
 # Amplify needs to know how to build an Astro project
-version: 3
+version: 1
 applications:
   - appRoot: frontend # folder containing frontend
     frontend:
