@@ -1,0 +1,10 @@
+// If it's your own code in a non-standard location, add to .vscode/settings.json:
+// "./backend/lambdas" - crucial! Tells pylance to look inside this folder for imports
+{
+    "python.analysis.extraPaths": ["./src", "./lib", "./backend/lambdas"],
+    "python.defaultInterpreterPath": ".venv",
+    "python.analysis.importFormat": "relative",
+    "python.terminal.activateEnvInCurrentTerminal": true
+
+
+}

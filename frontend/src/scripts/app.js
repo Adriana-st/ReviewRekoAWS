@@ -38,10 +38,10 @@
   if (filterSelect) {
     filterSelect.addEventListener('change', () => {
       // Call your function
-      loadGallery();
-
       // Expert tip: You can pass the selected value directly if needed
-      // loadGallery(filterSelect.value);
+
+      loadGallery(filterSelect.value);
+
     });
   }
 
@@ -144,33 +144,62 @@ async function submitReview() {
 }
 
 // ── GALLERY ─────────────────────────────────────────────────────────────────
-async function loadGallery() {
+async function loadGallery(category) {
   const resultsEl = document.getElementById('gallery-results');
-  // const category = document.getElementById('filter-category').value;
   resultsEl.textContent = 'Loading...';
 
   try {
-    // const url = category
-    //   ? `${API_BASE}/reviews?category=${encodeURIComponent(category)}`
-    //   : `${API_BASE}/reviews`;
+    let url = `${API_BASE}/reviews`;
+    // if category is not undefined, null or empty - add it as a URL parameter for lambda to see
+    // otherwise default URL
+    if (category !== undefined && category !== null && category !== "") {
+      url = `${API_BASE}/reviews?category=${encodeURIComponent(category)}`;
+    }
+    
 
-
-    const url = `${API_BASE}/reviews`;
+    // REMEMBER
+    // // STRUCTURE OF THE RESPONSE IS:
+    // { 
+    //     'statusCode': 200,
+    //     'headers': {
+    //         'Access-Control-Allow-Origin': '*',
+    //         'Access-Control-Allow-Headers': '*'
+    //     },
+    //     
+    //     'body': {
+    //       'products': items,
+    //       'count': len(items),
+    //       'message': "No products found" if not items else "",
+    //       'timestamp': datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z') 
+    //       
+    //     }
+    // }
+    
 
     const res = await fetch(url);
+    
     if (!res.ok) throw new Error('Failed to load reviews');
 
     // parse the outer envelope, then parse the body string
-    const envelope = await res.json();
-    const reviews = JSON.parse(envelope.body);
+    const body = await res.json();
+
     // if (!reviews.length) {
     //   resultsEl.textContent = 'No approved reviews found.';
     //   return;
     // }
 
+
     //<em style="font-size:12px;color:#888">${escHtml(r.productCategory)}</em><br/>
 
-    resultsEl.innerHTML = reviews.map(r => `
+//     3. Совет по UX на фронтенде
+// Вместо просто "Sorry, no products", хорошим тоном считается:
+
+//     Пустой стейт (Empty State): Красивая иконка с надписью "В этой категории пока нет товаров".
+//     Сброс фильтров: Кнопка "Посмотреть все категории".
+    if (body.count < 1) {
+      resultsEl.innerHTML = `This category currently has no products. Do you wanna search for all products?`;
+    } else {
+      resultsEl.innerHTML = body.products.map(r => `
   <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
     ${r.imageKey ? `
@@ -216,6 +245,8 @@ async function loadGallery() {
     </div>
   </div>
 `).join('');
+    }
+    
 
   } catch (err) {
     resultsEl.textContent = 'Sorry, something went wrong'
