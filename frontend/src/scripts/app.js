@@ -97,23 +97,31 @@ async function submitReview() {
     return;
   }
 
-  statusEl.textContent = 'Step 1/2 — Uploading image...';
+  statusEl.textContent = 'Step 1/3 — Getting upload URL...';
 
   try {
-    // Generate a unique reviewId once for this submission
+    // Generate a unique reviewId once — shared across both steps
     const reviewId = crypto.randomUUID();
 
-    // Step 1: Send image directly to Lambda via API Gateway
-    const uploadRes = await fetch(`${API_BASE}/upload-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': imageFile.type, 'x-review-id': reviewId },
-      body: imageFile
-    });
-    if (!uploadRes.ok) throw new Error('Image upload failed');
-    const { imageKey } = await uploadRes.json();
+    // Step 1: Ask Lambda for a presigned S3 URL
+    const urlRes = await fetch(
+      `${API_BASE}/upload-url?filename=${encodeURIComponent(imageFile.name)}&contentType=${encodeURIComponent(imageFile.type)}&reviewId=${reviewId}`
+    );
+    if (!urlRes.ok) throw new Error('Failed to get upload URL');
+    const { uploadUrl, imageKey } = await urlRes.json();
 
-    // Step 2: POST review metadata to API Gateway
-    statusEl.textContent = 'Step 2/2 — Submitting review...';
+    // Step 2: PUT the image directly to S3 using the presigned URL
+    // Must send the exact same Content-Type that the presigned URL was signed with
+    statusEl.textContent = 'Step 2/3 — Uploading image to S3...';
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': imageFile.type },
+      body: imageFile,
+    });
+    if (!uploadRes.ok) throw new Error('Image upload to S3 failed');
+
+    // Step 3: POST review metadata to API Gateway
+    statusEl.textContent = 'Step 3/3 — Submitting review...';
     const reviewRes = await fetch(`${API_BASE}/reviews`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -312,4 +320,3 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
-
