@@ -40,7 +40,7 @@
       // Call your function
       // Expert tip: You can pass the selected value directly if needed
 
-      loadGallery(filterSelect.value);
+      loadGallery();
 
     });
   }
@@ -152,9 +152,14 @@ async function submitReview() {
 }
 
 // ── GALLERY ─────────────────────────────────────────────────────────────────
-async function loadGallery(category) {
+async function loadGallery() {
   const resultsEl = document.getElementById('gallery-results');
-  resultsEl.textContent = 'Loading...';
+  const category = document.getElementById('filter-category').value;
+
+  if (resultsEl) {
+    resultsEl.textContent = 'Loading...';
+  }
+  
 
   try {
     let url = `${API_BASE}/reviews`;
