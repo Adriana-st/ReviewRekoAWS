@@ -1,0 +1,26 @@
+{
+    "resource": "/reviews",
+    "path": "/reviews",
+    "httpMethod": "GET",
+    "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0",
+        "Accept": "*/*",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Referer": "http://127.0.0.1:4321/",
+        "Origin": "http://127.0.0.1:4321",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "cross-site",
+        "Priority": "u=0"
+    },
+    "queryStringParameters": {
+        "reviewId": "addda4ea-09e7-4b58-beaf-b9e5d0780945"
+    },
+    "requestContext": {
+        "stage": "prod",
+        "httpMethod": "GET"
+    },
+    "isBase64Encoded": false
+}
