@@ -36,8 +36,16 @@ def lambda_handler(event, context):
     # the table
     table = dynamodb.Table('review-decisions-reviewreko')
 
+    review_id = query_params.get('reviewId')
 
-    if category is not None: # if there is a specific category
+    if review_id is not None:
+        # SCENARIO: Single review lookup by ID (used for polling after submission)
+        print(f"Looking up specific reviewId: {review_id}")
+        response = table.get_item(Key={'reviewId': review_id})
+        item = response.get('Item')
+        items = [item] if item else []
+
+    elif category is not None: # if there is a specific category
     # SCENARIO: Category Filter -> Query GSI + Filter APPROVED
          # The user PROVIDED a category (even if it's "electronics" or "wrong")
         # We ONLY query. If nothing is found, items will be []
