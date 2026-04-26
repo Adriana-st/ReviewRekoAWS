@@ -1,17 +1,44 @@
+# Amplify needs to know how to build an Astro project
 version: 1
 applications:
   - appRoot: frontend # folder containing frontend
     frontend:
       phases:
+        preBuild:
+          commands:
+          # Check if any files changed in the frontend directory in the last commit
+            # If not, exit with 0 to skip the build
+
+          # command breakdown:
+          # git diff --name-only HEAD^ HEAD .gitignore = show what files changed since last commit
+          # a Git revision selection operator that refers to the parent commit of the current HEAD (the commit immediately preceding the one currently checked out). It is primarily used to reference the previous state of a branch for commands like git show, git diff, or git checkout to undo or inspect changes.
+          # In the context of the command grep "^frontend/", the ^ is a Regular Expression (Regex) anchor that means "starts with."
+          # wc -l = print the newlines count
+          # $() = run in a subshell
+          # -eq 0 = if line count is equal to zero 
+          # exit 0 = then skip build WITHOUT ERRORS 
+            - |
+              if [ $(git diff --name-only HEAD^ HEAD | grep "^frontend/" | wc -l) -eq 0 ]; then
+                echo "No changes in frontend folder. Skipping build.";
+                exit 0;
+              fi
+            
+          #  Astro requires Node 18+. In Amplify console → App settings → Build settings → set Node.js version to 18 or 20
+          # setting  Node version explicitly:
+            - nvm use 20
+          # installing dependencies cleanly:
+            - npm ci
         # IMPORTANT - Please verify your build commands
         build:
-          commands: []
+          commands:
+            - npm run build
       artifacts:
         # IMPORTANT
         # That's build output directory (none for pure HTML)
         # "." refers to the current working directory (which will be /frontend)
-        baseDirectory: .
+        baseDirectory: dist
         files:
           - '**/*' # you must use **/* instead of /* so it recursively grabs all your CSS, JS, and nested subfolders, not just the root files
       cache:
-        paths: [] # put node_modules/**/* in here when needed
+        paths: 
+          - node_modules/**/* # put node_modules/**/* in here when needed

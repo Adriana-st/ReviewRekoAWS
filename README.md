@@ -1,215 +1,198 @@
+# ReviewReko
 
-# Setup Standards for AWS: Monorepo
-
-As a Senior AWS Architect, I strongly endorse using Python for your Lambda functions. Python is the dominant industry standard for serverless backends, especially with the rise of AI, data processing, and robust scripting needs. It has zero cold-start overhead compared to heavier runtimes like Java, and its ecosystem is unmatched.
-
-For a solo developer, moving to AWS Lambda requires a mental shift. You are no longer just writing code; you are building distributed systems. 
-
-## Don't use Localstack
-
-The biggest trap solo developers fall into with Lambdas is trying to simulate the entire AWS cloud on their local laptop using heavy Docker containers (like LocalStack). The modern industry standard is **Cloud-Local Development**: unit test your business logic locally in Python, but test your infrastructure directly in the AWS Cloud.
-
-Here is the end-to-end framework for structuring, testing, and deploying Python Lambdas using **AWS CDK (Cloud Development Kit)** and a **Monorepo** approach.
+A serverless product review platform with AI-powered image moderation built on AWS. Submitted reviews are automatically screened by Amazon Rekognition before appearing in the public gallery — inappropriate images are rejected with a logged reason, while approved reviews are published with AI-generated descriptions.
 
 ---
 
-### 1. Repository Strategy: The Monorepo
-**Should you store them in the same repo?** **Absolutely yes.** 
+## Architecture Overview
 
-For a solo developer, separating frontend and backend into multiple repositories is a massive operational burden. You want a single Pull Request to contain both your backend Python API changes and your frontend HTML/UI changes. 
-
-**Standard Folder Structure:**
-```text
-/my-saas
-  /frontend         # Your Amplify HTML/JS app
-  /backend          # Lambda source code (Python)
-    /src            # Python handlers and logic
-    /tests          # pytest suite
-    requirements.txt
-  /infrastructure   # AWS CDK code defining your Lambdas, API GW (Python)
-  .github/workflows # CI/CD pipelines
+```
+Frontend (Amplify)
+      │
+      ├── POST /upload-url  ──► GeneratePresignedURL Lambda ──► S3 Uploads Bucket
+      │                                                               │
+      │                                                    S3 Event Notification
+      │                                                               │
+      │                                                    ReviewProcessor Lambda
+      │                                                      ├── Rekognition (moderation)
+      │                                                      ├── Rekognition (labels)
+      │                                                      ├── S3 Approved Bucket
+      │                                                      └── DynamoDB
+      │
+      ├── POST /reviews     ──► SaveReview Lambda ──► DynamoDB
+      │
+      └── GET  /reviews     ──► ReviewAnalytics Lambda ──► DynamoDB
 ```
 
 ---
 
-### 2. The Toolchain
-To do this properly, you need Infrastructure-as-Code (IaC). Clicking around the AWS Console to create Lambdas is unmaintainable and impossible to version-control.
+## Services Used
 
-*   **Infrastructure as Code:** **AWS CDK** (We will use Python for the CDK code too, keeping your entire backend stack in one language).
-*   **Local Testing (Unit):** **`pytest`**.
-*   **Cloud Testing (Integration):** `cdk watch` (Deploys code changes to AWS in seconds).
-*   **CI/CD Pipeline:** **GitHub Actions**.
+| Service | Purpose |
+|---|---|
+| AWS Amplify | Frontend hosting with GitHub CI/CD |
+| API Gateway | REST API — `POST /upload-url`, `POST /reviews`, `GET /reviews` |
+| Lambda (×4) | GeneratePresignedURL, SaveReview, ReviewProcessor, ReviewAnalytics |
+| S3 (×2) | `review-images-uploads-reviewreko` (private), `approved-images-reviewreko` (public read) |
+| Amazon Rekognition | Content moderation + label detection |
+| DynamoDB | Review storage with GSI for category filtering |
+| CloudWatch | Custom metrics dashboard — approvals vs rejections by category |
 
 ---
 
-### 3. How to Write and Test Python Lambdas Properly
+## How a Review Flows Through the System
 
-The secret to testing Lambdas is **not** testing the Lambda itself locally. The secret is decoupling your business logic from the AWS handler. 
+1. User fills out the review form and selects a product image
+2. Frontend generates a `reviewId` using `crypto.randomUUID()`
+3. Image is sent directly to `POST /upload-url` — stored in S3 as `uploads/{reviewId}.{ext}`
+4. Review metadata is sent to `POST /reviews` — written to DynamoDB with `status: PENDING`
+5. The S3 upload triggers `ReviewProcessor` via S3 Event Notification
+6. Rekognition runs `DetectModerationLabels` — if anything flags above 80% confidence, the record is updated to `REJECTED`
+7. Rekognition runs `DetectLabels` — content labels are extracted for the AI description
+8. Approved images are copied to the public S3 bucket; a plain-English description is generated from the detected labels
+9. DynamoDB record is updated to `APPROVED` with the public image URL, labels, and AI description
+10. A custom CloudWatch metric is pushed — dimensions: Status + Category
 
-#### The Code (Hexagonal Architecture "Lite")
-Do not put your logic inside the `handler` function. Pass the event payload to a pure Python function.
+---
 
-**`backend/src/create_user.py`**
-```python
-import json
-import logging
+## Lambda Functions
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+### GeneratePresignedURL_ReviewReko
+- Triggered by `POST /upload-url`
+- Reads `x-review-id` header, uses it as the S3 filename: `uploads/{reviewId}.{ext}`
+- Returns the `imageKey` to the frontend
 
-# 1. The Pure Business Logic (Easily tested locally with pytest without AWS)
-def process_user_creation(email: str, db_client=None):
-    if "@" not in email:
-        raise ValueError("Invalid email format")
-    
-    # Example: db_client.put_item(Item={"PK": f"USER#{email}"})
-    logger.info(f"Successfully processed user: {email}")
-    
-    return {"success": True, "email": email}
+### SaveReview_ReviewReko
+- Triggered by `POST /reviews`
+- Writes the full review record to DynamoDB with `status: PENDING`
 
-# 2. The AWS Lambda Handler (Only parses inputs and formats outputs)
-def handler(event, context):
-    try:
-        # Extract data from API Gateway event
-        body = json.loads(event.get("body", "{}"))
-        email = body.get("email")
+### ReviewProcessor_ReviewReko
+- Triggered by S3 `ObjectCreated:Put` on the `uploads/` prefix
+- Runtime: Python 3.12 | Timeout: 30s | Memory: 256MB
+- Runs Rekognition moderation and label detection
+- Copies approved images to the public bucket
+- Updates DynamoDB record with final status, labels, and AI description
 
-        # Execute core logic
-        result = process_user_creation(email)
+### ReviewAnalytics_ReviewReko
+- Triggered by `GET /reviews`
+- `GET /reviews` → returns all `APPROVED` records (full table scan, filtered)
+- `GET /reviews?category=footwear` → queries `category-index` GSI
 
-        # Return standard API Gateway response
-        return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps(result)
-        }
-    except ValueError as ve:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": str(ve)})
-        }
-    except Exception as e:
-        logger.error(f"Internal server error: {str(e)}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Internal server error"})
-        }
+---
+
+## DynamoDB Schema
+
+Table name: `review-decisions-reviewreko`  
+Partition key: `reviewId` (String) — no sort key
+
+| Field | Source |
+|---|---|
+| `reviewId` | Frontend (`crypto.randomUUID()`) |
+| `timestamp` | Lambda |
+| `customerName` | Frontend POST |
+| `productName` | Frontend POST |
+| `productCategory` | Frontend POST |
+| `reviewText` | Frontend POST |
+| `starRating` | Frontend POST |
+| `imageKey` | ReviewProcessor (approved S3 public URL) |
+| `status` | ReviewProcessor (`APPROVED` / `REJECTED` / `PENDING`) |
+| `reason` | ReviewProcessor |
+| `labelsDetected` | ReviewProcessor |
+| `moderationFlags` | ReviewProcessor |
+| `aiDescription` | ReviewProcessor |
+
+### GSI — `category-index`
+- Partition key: `productCategory`
+- Sort key: `timestamp`
+- Projection: All
+
+Used by the frontend to filter the gallery by category without scanning the full table.
+
+---
+
+## Frontend
+
+Single-page Astro application deployed on AWS Amplify. Two active sections controlled by vanilla JS tab navigation:
+
+- **Submit Review** — form with image upload, sends to API Gateway
+- **Browse Reviews** — gallery of approved reviews, filterable by category via the GSI
+
+### Amplify Deployments
+
+| Branch | URL |
+|---|---|
+| `main` | https://main.d1wca7itzjfmad.amplifyapp.com |
+| `dev` | https://dev.d1wca7itzjfmad.amplifyapp.com |
+
+### Local Development
+
+```bash
+npm install
+npm run dev       # development server at localhost:4321
+npm run build     # production build → dist/
+npm run preview   # serve dist/ locally (mirrors Amplify output)
 ```
 
-#### How to Test
-1.  **Local Unit Testing:** Write simple `pytest` tests for `process_user_creation`. This runs in milliseconds on your laptop. No AWS required.
-2.  **Local Execution/Hot Reload:** For testing the actual API endpoint, use **CDK Watch**. 
-    *   Run `cdk watch` in your terminal.
-    *   Every time you hit save on your Python code, CDK directly swaps the code in AWS in about 2-3 seconds, bypassing the slow CloudFormation process.
-    *   You hit the live, personal development API Gateway URL via Postman/cURL to test it.
+Amplify build is configured via `amplify.yml` — artifact base directory is `dist/`.
 
 ---
 
-### 4. Defining the Infrastructure (AWS CDK)
+## API Reference
 
-Instead of manual setup, you define your API and Lambda in code. 
+Base URL: `https://ptyne4n0cl.execute-api.eu-west-1.amazonaws.com/prod`
 
-**`infrastructure/app_stack.py`**
-```python
-from aws_cdk import (
-    Stack,
-    CfnOutput,
-    aws_lambda as _lambda,
-    aws_apigatewayv2 as apigw,
-    aws_apigatewayv2_integrations as integrations,
-)
-from constructs import Construct
+```
+POST /upload-url
+  Headers: Content-Type: <image mime type>, x-review-id: <uuid>
+  Body:    raw image bytes
+  Returns: { imageKey: string }
 
-class BackendStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs):
-        super().__init__(scope, construct_id, **kwargs)
+POST /reviews
+  Body: { reviewId, customerName, productName, productCategory, starRating, reviewText, imageKey }
+  Returns: 200 OK
 
-        # 1. Define the Python Lambda
-        create_user_lambda = _lambda.Function(
-            self, "CreateUserFunction",
-            runtime=_lambda.Runtime.PYTHON_3_12,
-            architecture=_lambda.Architecture.ARM_64, # 💰 ARM64 is 20% cheaper and faster!
-            code=_lambda.Code.from_asset("../backend/src"), # Points to your Python folder
-            handler="create_user.handler",
-            memory_size=256,
-        )
-
-        # 2. Define the HTTP API Gateway (Cheaper and faster than standard REST API)
-        http_api = apigw.HttpApi(
-            self, "SaaSHttpApi",
-            api_name="SaaS Backend",
-            cors_preflight=apigw.CorsPreflightOptions(
-                allow_origins=["https://your-amplify-domain.com"],
-                allow_methods=[apigw.CorsHttpMethod.ANY]
-            )
-        )
-
-        # 3. Connect API to Lambda
-        http_api.add_routes(
-            path="/users",
-            methods=[apigw.HttpMethod.POST],
-            integration=integrations.HttpLambdaIntegration(
-                "UserIntegration", create_user_lambda
-            )
-        )
-
-        # Output the API URL to the terminal
-        CfnOutput(self, "ApiUrl", value=http_api.api_endpoint)
+GET /reviews
+GET /reviews?category=footwear
+  Returns: { statusCode: 200, body: "<JSON string — parse with JSON.parse(envelope.body)>" }
 ```
 
+> **Note:** API Gateway Lambda Proxy Integration wraps responses in an envelope. The `body` field is a JSON string and must be parsed separately: `JSON.parse(envelope.body)`.
+
 ---
 
-### 5. Automated Deployment (CI/CD)
+## Important Implementation Notes
 
-GitHub Actions will handle your backend, while Amplify handles your frontend. 
+**API Gateway redeployment** — every change to API Gateway requires a manual redeploy: Actions → Deploy API → prod stage. Changes do not go live automatically.
 
-**`.github/workflows/deploy-backend.yml`**
-```yaml
-name: Deploy Python Backend via CDK
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'backend/**'
-      - 'infrastructure/**'
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install CDK and dependencies
-        run: |
-          npm install -g aws-cdk
-          pip install -r infrastructure/requirements.txt
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-west-1 # Adjust to your region
-
-      - name: Deploy CDK Stack
-        working-directory: ./infrastructure
-        run: cdk deploy --require-approval never
+**CORS headers** — every Lambda response must include:
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: *
 ```
 
+**S3 Event Notification prefix** — the `uploads/` prefix on the S3 trigger is critical. Without it, every time ReviewProcessor copies an image to the approved bucket it would trigger itself again in an infinite loop.
+
+**DynamoDB sort key** — the table has no sort key by design. Do not add one. All time-based sorting goes through the `category-index` GSI.
+
+**Rekognition timeout** — ReviewProcessor has a 30s timeout. The default 3s Lambda timeout silently fails on Rekognition calls.
+
 ---
 
-### ⚠️ Architecture Pitfalls to Avoid
+## CloudWatch Monitoring
 
-1.  **Wildcard IAM Roles:** Never give a Lambda `*` (admin) permissions. If your Python Lambda needs to read from a DynamoDB table, use the CDK helper: `my_table.grant_read_data(create_user_lambda)`. CDK will generate the exact, least-privilege IAM policy required.
-2.  **Using API Gateway REST API instead of HTTP API:** Unless you need Web Application Firewall (WAF), API keys, or request validation at the gateway level, use **HTTP APIs**. They are 71% cheaper and have less latency.
-3.  **Not Using ARM64:** Always set your Python Lambda architecture to `ARM_64` (Graviton). Python runs natively on ARM, giving you better performance and a 20% cost reduction out of the box with zero code changes.
-4.  **Secrets in Environment Variables:** Do not hardcode database passwords or third-party API keys in Lambda Environment Variables (they are visible in plain text in the console). Store them in **AWS Systems Manager (SSM) Parameter Store** and fetch them securely inside your Python code using `boto3`, or utilize the AWS Parameters and Secrets Lambda Extension for caching to avoid API rate limits and extra costs.
-5.  **Global Variable Re-use:** In Python, initialize connections (like `boto3.client('dynamodb')` or database connections) *outside* the handler function. AWS freezes the execution environment between invocations; declaring these globally allows subsequent Lambda executions to reuse the connection, drastically reducing latency.
+Dashboard: `ReviewReko-Dashboard`  
+Custom namespace: `ReviewSystem`  
+Metric: `ProcessedImages`  
+Dimensions: `Status` (APPROVED / REJECTED), `Category`
+
+Line graph shows approval vs rejection rate over time, broken down by product category.
+
+---
+
+## Demo Scenarios
+
+| Scenario | What to show |
+|---|---|
+| Normal approval | Submit a clean product photo → appears in gallery with labels and AI description |
+| Content rejection | Submit an inappropriate image → status REJECTED with moderation flag and confidence % |
+| Category filtering | Filter the gallery by different product categories using the GSI |

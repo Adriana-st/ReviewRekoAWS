@@ -1,0 +1,38 @@
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+
+# Environments (Standard and uv)
+.venv
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packages
+dist/
+build/
+*.egg-info/
+
+# Environment variables and secrets (NEVER commit these)
+.env
+.env.local
+.aws/
+credentials.json
+
+# IDEs
+.vscode/
+.idea/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# AWS SAM or CDK
+.aws-sam/
+.cdk.staging/
+cdk.out/
