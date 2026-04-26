@@ -50,15 +50,7 @@ def lambda_handler(event, context):
     label_names = [label['Name'] for label in labels_response['Labels']]
     print(f"Labels detected: {label_names}")
 
-    # STEP 3 — Blurry check
-    if 'Blurry' in label_names:
-        print("Rejected (blurry image)")
-        update_decision(review_id, timestamp, image_key, 'REJECTED',
-                       'blurry_image', label_names, [], '')
-        push_metric('REJECTED', 'unknown')
-        return
-
-    # STEP 4 — Copy to approved bucket
+    # STEP 3 — Copy to approved bucket
     approved_key = image_key.replace('uploads/', 'approved/')
     s3.copy_object(
         CopySource={'Bucket': UPLOAD_BUCKET, 'Key': image_key},
@@ -68,10 +60,10 @@ def lambda_handler(event, context):
     approved_url = f"https://{APPROVED_BUCKET}.s3.eu-west-1.amazonaws.com/{approved_key}"
     print(f"Image approved and copied to: {approved_url}")
 
-    # STEP 5 — Generate description from labels
+    # STEP 4 — Generate description from labels
     ai_description = generate_description(label_names)
 
-    # STEP 6 — Update record
+    # STEP 5 — Update record
     update_decision(review_id, timestamp, approved_url, 'APPROVED',
                    'none', label_names, [], ai_description)
     push_metric('APPROVED', 'general')
