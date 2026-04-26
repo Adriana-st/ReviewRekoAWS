@@ -1,6 +1,6 @@
 # ReviewReko
 
-A serverless product review platform with AI-powered image moderation built on AWS. Submitted reviews are automatically screened by Amazon Rekognition before appearing in the public gallery — inappropriate or blurry images are rejected with a logged reason, while approved reviews are published with AI-generated descriptions.
+A serverless product review platform with AI-powered image moderation built on AWS. Submitted reviews are automatically screened by Amazon Rekognition before appearing in the public gallery — inappropriate images are rejected with a logged reason, while approved reviews are published with AI-generated descriptions.
 
 ---
 
@@ -32,7 +32,7 @@ Frontend (Amplify)
 |---|---|
 | AWS Amplify | Frontend hosting with GitHub CI/CD |
 | API Gateway | REST API — `POST /upload-url`, `POST /reviews`, `GET /reviews` |
-| Lambda (×3) | GeneratePresignedURL, SaveReview, ReviewProcessor, ReviewAnalytics |
+| Lambda (×4) | GeneratePresignedURL, SaveReview, ReviewProcessor, ReviewAnalytics |
 | S3 (×2) | `review-images-uploads-reviewreko` (private), `approved-images-reviewreko` (public read) |
 | Amazon Rekognition | Content moderation + label detection |
 | DynamoDB | Review storage with GSI for category filtering |
@@ -48,10 +48,10 @@ Frontend (Amplify)
 4. Review metadata is sent to `POST /reviews` — written to DynamoDB with `status: PENDING`
 5. The S3 upload triggers `ReviewProcessor` via S3 Event Notification
 6. Rekognition runs `DetectModerationLabels` — if anything flags above 80% confidence, the record is updated to `REJECTED`
-7. Rekognition runs `DetectLabels` — blurry images are also rejected
+7. Rekognition runs `DetectLabels` — content labels are extracted for the AI description
 8. Approved images are copied to the public S3 bucket; a plain-English description is generated from the detected labels
 9. DynamoDB record is updated to `APPROVED` with the public image URL, labels, and AI description
-10. A custom CloudWatch metric is pushed — dimension: Status + Category
+10. A custom CloudWatch metric is pushed — dimensions: Status + Category
 
 ---
 
@@ -77,7 +77,6 @@ Frontend (Amplify)
 - Triggered by `GET /reviews`
 - `GET /reviews` → returns all `APPROVED` records (full table scan, filtered)
 - `GET /reviews?category=footwear` → queries `category-index` GSI
-- `GET /reviews?admin=true` → returns all records regardless of status
 
 ---
 
@@ -113,11 +112,10 @@ Used by the frontend to filter the gallery by category without scanning the full
 
 ## Frontend
 
-Single-page Astro application deployed on AWS Amplify. Three sections controlled by vanilla JS tab navigation:
+Single-page Astro application deployed on AWS Amplify. Two active sections controlled by vanilla JS tab navigation:
 
 - **Submit Review** — form with image upload, sends to API Gateway
 - **Browse Reviews** — gallery of approved reviews, filterable by category via the GSI
-- **Admin** — full records table including rejected submissions with reasons (currently disabled)
 
 ### Amplify Deployments
 
@@ -155,7 +153,6 @@ POST /reviews
 
 GET /reviews
 GET /reviews?category=footwear
-GET /reviews?admin=true
   Returns: { statusCode: 200, body: "<JSON string — parse with JSON.parse(envelope.body)>" }
 ```
 
@@ -196,21 +193,6 @@ Line graph shows approval vs rejection rate over time, broken down by product ca
 
 | Scenario | What to show |
 |---|---|
-| Normal approval | Submit clean product photo → appears in gallery with labels and AI description |
-| Content rejection | Submit inappropriate image → REJECTED in admin with flag and confidence % |
-| Blurry rejection | Submit out-of-focus photo → REJECTED with `reason: blurry_image` |
-| Category filtering | Filter gallery by different categories using the GSI |
-| CloudWatch dashboard | Approvals vs rejections graph with real data |
-
----
-
-## Submission Checklist
-
-- [ ] Video demonstration (max 10 min)
-- [ ] One-page contribution summary
-- [ ] Architecture diagram
-- [ ] AWS Cost Estimator breakdown (annual cost per service)
-- [ ] Screenshots: Lambda configs, IAM roles, DynamoDB + GSI, S3 event notification, API Gateway, CloudWatch dashboard
-- [ ] Report: architecture + business case, security justification, monitoring section, design decisions
-
-**Due: Sunday 26 April 23:59**
+| Normal approval | Submit a clean product photo → appears in gallery with labels and AI description |
+| Content rejection | Submit an inappropriate image → status REJECTED with moderation flag and confidence % |
+| Category filtering | Filter the gallery by different product categories using the GSI |
