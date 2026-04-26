@@ -1,188 +1,117 @@
-https://claude.ai/share/94d8ca01-6532-44dd-b1af-6c3cd2bcb0d9
+# ReviewReko — System Overview
 
+ReviewReko is a serverless image moderation and product review platform built on AWS. Customers submit product reviews with images. Images are automatically screened by Rekognition, and only approved content is published to the public gallery. The system is structured in three layers: input, processing, and output.
 
-Your system has three distinct layers:
+---
 
+## Services used
 
-**Input layer** — the HTML page where a user submits a review and uploads a photo
+- S3 (two buckets)
+- AWS Lambda (three functions)
+- Amazon API Gateway
+- Amazon Rekognition
+- Amazon DynamoDB
+- AWS Amplify
+- Amazon CloudWatch
 
+---
 
-**Processing layer** — S3 triggers Lambda, Lambda calls Rekognition (and optionally Bedrock), result gets saved to DynamoDB
+## Input layer
 
+### Frontend — hosted on AWS Amplify
 
-**Output layer** — the HTML page also displays approved reviews, filterable by category
+A single HTML page with two sections: a review submission form and an approved review gallery with category filtering. Deployed on the main branch: https://main.d1wca7itzjfmad.amplifyapp.com
 
+On submission, JavaScript generates a `reviewId` using `crypto.randomUUID()`. It passes this ID as an `x-review-id` header to `POST /upload-url`, uploads the image directly to S3 using the returned presigned URL, then sends the review metadata (including the same `reviewId`) to `POST /reviews`.
 
-Every service has one clear job. Nothing is there just to hit a number.
+### API Gateway — Gateway_ReviewReko
 
+Base URL: https://ptyne4n0cl.execute-api.eu-west-1.amazonaws.com/prod
 
-Service 1 — S3
---------------
+- `POST /upload-url` → GeneratePresignedURL_ReviewReko Lambda
+- `POST /reviews` → SaveReview_ReviewReko Lambda
+- `GET /reviews` → ReviewAnalytics_ReviewReko Lambda
 
+CORS is enabled on all endpoints. The `/upload-url` endpoint explicitly allows the `x-review-id` custom header.
 
-You need **two buckets**:
+Every API Gateway change requires a manual redeploy (Actions → Deploy API → prod) before it takes effect.
 
+### Lambda — GeneratePresignedURL_ReviewReko
 
-review-images-uploads — raw incoming images land here. This bucket is private. Nobody should be able to access these directly because they haven't been moderated yet.
+Reads the `x-review-id` header and uses it as the S3 image filename: `uploads/{reviewId}.{ext}`. Returns a presigned PUT URL to the frontend. The frontend uploads the image directly to S3 from the browser — the image never passes through Lambda.
 
+Environment variables: `UPLOAD_BUCKET` = `review-images-uploads-reviewreko`
 
-review-images-approved — images that passed all checks get copied here. This bucket can be public-read so your frontend can display them as  tags directly.
+### Lambda — SaveReview_ReviewReko
 
+Triggered by `POST /reviews`. Receives the full review form data and writes a record to DynamoDB with `status: PENDING`. ReviewProcessor updates this same record later using the shared `reviewId`.
 
-The upload bucket has one critical setting: an **Event Notification** configured to fire on s3:ObjectCreated:\* events, pointing at your Lambda function. This is what starts the whole pipeline automatically the moment an image arrives.
+Environment variables: `DYNAMODB_TABLE` = `review-decisions-reviewreko`
 
+IAM: `dynamodb:PutItem`, `dynamodb:UpdateItem` on the table only.
 
-**Important:** you also need a prefix filter on that trigger — set it to uploads/ — so Lambda only fires on new incoming images, not on anything else happening in the bucket.
+---
 
+## Processing layer
 
-Service 2 — Lambda
-------------------
+### S3 uploads bucket — review-images-uploads-reviewreko
 
+Private (block all public access ON). Raw incoming images land here. An S3 Event Notification is configured with prefix `uploads/` and event type `s3:ObjectCreated:Put`, pointing at ReviewProcessor Lambda. The prefix is critical — without it, every copy ReviewProcessor makes to the approved bucket would retrigger it in an infinite loop.
 
-One main function does steps 2 through 6. It receives the S3 event, runs Rekognition, makes the moderation decision, optionally calls Bedrock, and writes to DynamoDB.
+### Lambda — ReviewProcessor_ReviewReko
 
+Runtime: Python 3.12. Timeout: 30s. Memory: 256MB.
 
-The function needs these **environment variables** set in the Lambda console under Configuration → Environment Variables:
+Triggered by the S3 event notification. Processes each image in this order:
 
+1. Extracts `reviewId` from the image key (e.g. `uploads/abc-123.jpg` → `abc-123`)
+2. Calls Rekognition `DetectModerationLabels` — if any label exceeds the confidence threshold, writes a REJECTED record to DynamoDB with reason and flags, then stops
+3. Calls Rekognition `DetectLabels` — gets the content labels for the image
+4. Copies the image from the uploads bucket to the approved bucket
+5. Generates a plain-English description from the detected labels in Python (Bedrock is not available on the student account)
+6. Uses `update_item` by `reviewId` to update the existing DynamoDB record with: status APPROVED, imageKey (public S3 URL), labelsDetected, moderationFlags, aiDescription, timestamp
+7. Pushes a custom metric to CloudWatch with dimensions: Status and Category
 
-KeyExample valueAPPROVED\_BUCKETreview-images-approvedDYNAMODB\_TABLEreview-decisionsMODERATION\_THRESHOLD80
+Environment variables: `UPLOAD_BUCKET`, `APPROVED_BUCKET` = `approved-images-reviewreko`, `DYNAMODB_TABLE`, `MODERATION_THRESHOLD` = `80`
 
+IAM: `s3:GetObject` on uploads bucket, `s3:PutObject` on approved bucket, `rekognition:DetectModerationLabels`, `rekognition:DetectLabels`, `dynamodb:PutItem`, `dynamodb:UpdateItem`, `cloudwatch:PutMetricData`
 
-**Runtime:** Python 3.12. **Timeout:** increase it from the default 3 seconds to 30 seconds — Rekognition and Bedrock calls take time and your function will silently fail if it times out.
+### S3 approved bucket — approved-images-reviewreko
 
+Block all public access OFF. Bucket policy allows `s3:GetObject` for all principals. Images copied here after passing moderation. The frontend loads them directly as `<img src="...">` using the public URL stored in DynamoDB.
 
-**Memory:** 256MB is fine. The image never passes through Lambda memory — you're just passing S3 references around, not loading image bytes.
+### DynamoDB table — review-decisions-reviewreko
 
+Partition key: `reviewId` (String). No sort key. Capacity: on-demand.
 
-Service 3 — Rekognition
------------------------
+GSI: `category-index` — partition key `productCategory` (String), sort key `timestamp` (String), projected attributes: All. This GSI is what powers category filtering in the gallery without scanning the full table.
 
+Fields in each record: `reviewId`, `timestamp`, `customerName`, `productName`, `productCategory`, `reviewText`, `starRating`, `imageKey`, `status` (APPROVED / REJECTED / PENDING), `reason`, `labelsDetected`, `moderationFlags`, `aiDescription`
 
-Two separate API calls, run in sequence:
+### CloudWatch — ReviewReko-Dashboard
 
+ReviewProcessor pushes a custom metric `ProcessedImages` to namespace `ReviewSystem` after every decision, with dimensions Status and Category. A CloudWatch dashboard displays approvals vs rejections over time as a line graph.
 
-**Call 1 — DetectModerationLabels**
+---
 
+## Output layer
 
-Sends the S3 reference (bucket + key) to Rekognition. Gets back a list of anything unsafe detected above your confidence threshold. If the list is non-empty, reject immediately. You never run Call 2 on a rejected image — no point spending the API call.
+### Lambda — ReviewAnalytics_ReviewReko
 
+Triggered by `GET /reviews` via API Gateway. Handles two scenarios:
 
-**Call 2 — DetectLabels**
+- `GET /reviews` — scans the table and filters for status = APPROVED
+- `GET /reviews?category=footwear` — queries the `category-index` GSI by `productCategory`, filters for status = APPROVED
 
+Returns records as JSON. The `imageKey` field in each approved record is the full public S3 URL, loaded directly by the frontend as an `<img>` tag.
 
-Only runs if Call 1 returned nothing. This is what tells you what's actually _in_ the image — "Shoe", "Red", "Outdoor", "Electronics" etc. You store these labels in DynamoDB as the tags that power your filtering on the frontend.
+IAM: `dynamodb:Query`, `dynamodb:Scan` on the table only.
 
+---
 
-One useful thing to check for here: Rekognition returns a "Blurry" label when image quality is too poor. You can reject blurry images as a quality gate — a blurry review photo is useless to other customers and worth showing as a separate rejection scenario in your demo.
+## Things to know
 
-
-Service 4 — DynamoDB
---------------------
-
-
-One table called review-decisions.
-
-
-**Table design:**
-
-
-*   Partition key: reviewId (String) — a unique ID you generate per review
-    
-*   Sort key: timestamp (String) — ISO format datetime
-    
-
-
-**Add one GSI (Global Secondary Index):**
-
-
-*   Index name: category-index
-    
-*   Partition key: category (String)
-    
-*   Sort key: timestamp (String)
-    
-
-
-The GSI is what lets your frontend query "show me all footwear reviews" efficiently without scanning the entire table. You add it when creating the table — it's a few extra fields in the console, takes two minutes, and shows your lecturer you understand how NoSQL access patterns work.
-
-
-**What each record looks like:**
-
-
-json
-
-
-`   {    "reviewId": "abc123",    "timestamp": "2026-04-05T14:32:00Z",    "customerId": "cust_456",    "productCategory": "footwear",    "reviewText": "Really comfortable, great quality",    "imageKey": "approved/footwear/abc123.jpg",    "status": "APPROVED",    "reason": "none",    "labelsDetected": ["Shoe", "Red", "Outdoor"],    "aiDescription": "A red running shoe photographed outdoors",    "moderationFlags": []  }   `
-
-
-For rejected images the record looks the same but status is "REJECTED", reason is something like "inappropriate\_content" or "blurry\_image", and imageKey stays in the uploads bucket rather than approved.
-
-
-Service 5 — API Gateway
------------------------
-
-
-Two endpoints, both GET, both trigger small Lambda functions:
-
-
-**GET /reviews** — returns all approved reviews, optionally filtered by ?category=footwear
-
-
-**GET /reviews/{reviewId}** — returns a single review record by ID
-
-
-That's it. Your frontend calls these to populate the review display. You configure each endpoint in API Gateway, point them at Lambda, and enable CORS (there's a checkbox — without it your HTML page will get browser errors when trying to call the API).
-
-
-Service 6 — Bedrock (optional but recommended)
-----------------------------------------------
-
-
-If your school account has it enabled, this is one extra function call inside your main Lambda, run after DetectLabels passes:
-
-
-python
-
-
-`   prompt = f"""  The following objects were detected in a product review image:  {', '.join(detected_labels)}  Write one natural sentence describing what this image shows,  as it would appear in a product review. Maximum 15 words.  """   `
-
-
-You pass that prompt to Claude Haiku on Bedrock and store the response as aiDescription in DynamoDB. The frontend displays it under the review image. It costs fractions of a penny per call and takes under a second.
-
-
-If Bedrock isn't available, just store the raw labels instead and skip the description field — the rest of the system is identical.
-
-
-Service 7 — CloudWatch
-----------------------
-
-
-Lambda sends logs here automatically — you don't configure anything for basic logging. What you _do_ want to add manually is a **custom metric** inside your Lambda after every decision:
-
-
-python
-
-
-`   cloudwatch.put_metric_data(      Namespace='ReviewSystem',      MetricData=[{          'MetricName': 'ProcessedImages',          'Value': 1,          'Unit': 'Count',          'Dimensions': [              {'Name': 'Status', 'Value': status},              {'Name': 'Category', 'Value': category}          ]      }]  )   `
-
-
-This lets you build a CloudWatch dashboard showing approvals vs rejections over time, broken down by category. That's what you show in the demo for the monitoring marks — a real operational graph, not just raw log lines.
-
-
-The Frontend
-------------
-
-
-One HTML file, hosted as a static website on S3. Three sections:
-
-
-**Submit a review** — product name, category dropdown, star rating, text box, file upload, submit button. On submit, JavaScript calls your API Gateway upload endpoint, gets back a presigned S3 URL, and uploads the image directly to S3 from the browser. Then it posts the review metadata to a second endpoint.
-
-
-**My submission result** — after submitting, shows whether the image was approved or rejected and why.
-
-
-**Browse reviews** — calls GET /reviews (or filtered by category) and renders a grid of approved review images with their text, labels, rating, and Bedrock description if you have it.
-
-
-Adriana can style this however she wants — the AWS connections are all in about 50 lines of JavaScript, the rest is pure HTML and CSS.
+- Every Lambda response must include `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: *` or the browser will reject the response
+- Every API Gateway change requires a manual redeploy before it goes live
+- The DynamoDB table has no sort key — do not add one. All time-sorted queries use the GSI
+- The S3 event notification prefix `uploads/` must not be removed — it prevents the infinite loop
