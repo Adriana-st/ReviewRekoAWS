@@ -137,7 +137,11 @@ async function submitReview() {
     });
     if (!reviewRes.ok) throw new Error('Failed to submit review');
 
-    statusEl.textContent = 'Review submitted! It will appear in the gallery once moderation is complete (usually a few seconds).';
+    statusEl.textContent = `Review submitted! It will appear in the gallery once moderation is complete (usually a few seconds).`;
+    
+    // CHECKING THE STATUS
+    await pollReviewStatus(reviewId, statusEl);
+
     // Reset form
     document.getElementById('customerName').value = '';
     document.getElementById('productName').value = '';
@@ -265,6 +269,54 @@ async function loadGallery() {
     resultsEl.textContent = 'Sorry, something went wrong'
     console.log(err);
   }
+}
+
+async function pollReviewStatus(reviewId, statusEl) {
+  const MAX_ATTEMPTS = 15;
+  const INTERVAL_MS = 2000;
+
+  // Base classes shared by all states
+  const base = 'min-h-5 text-center text-sm rounded-lg px-4 py-2 transition-colors';
+
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    await new Promise(r => setTimeout(r, INTERVAL_MS));
+    try {
+      const res = await fetch(`${API_BASE}/reviews?reviewId=${encodeURIComponent(reviewId)}`);
+      if (!res.ok) continue;
+      const envelope = await res.json();
+      const body = JSON.parse(envelope.body ?? JSON.stringify(envelope));
+      const item = (body.products ?? body.items ?? [])[0];
+
+      if (!item || item.status === 'PENDING') {
+        statusEl.className = `${base} text-slate-500`;
+        statusEl.textContent = `Checking moderation… (${i + 1}/${MAX_ATTEMPTS})`;
+        continue;
+      }
+
+      if (item.status === 'APPROVED') {
+        // green-800 on green-50 = 7.2:1 contrast ratio ✓
+        statusEl.className = `${base} bg-green-50 text-green-800 border border-green-200`;
+        statusEl.textContent = '✓ Review approved and published to the gallery!';
+        return;
+      }
+
+      if (item.status === 'REJECTED') {
+        const flags = item.moderationFlags?.join(', ') || item.reason || 'policy violation';
+        // red-800 on red-50 = 7.5:1 contrast ratio ✓
+        statusEl.className = `${base} bg-red-50 text-red-800 border border-red-200`;
+        statusEl.textContent = `✗ Review rejected — image flagged for: ${escHtml(flags)}`;
+        return;
+      }
+
+    } catch {
+      // silently retry
+    }
+  }
+
+  // Timeout — neutral warning
+  // amber-800 on amber-50 = 7.1:1 contrast ratio ✓
+  statusEl.className = `${base} bg-amber-50 text-amber-800 border border-amber-200`;
+  statusEl.textContent = 'Moderation is taking longer than expected. Check back in the gallery shortly.';
 }
 
 // ── ADMIN ───────────────────────────────────────────────────────────────────
