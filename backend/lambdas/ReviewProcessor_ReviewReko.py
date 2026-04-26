@@ -24,6 +24,15 @@ def lambda_handler(event, context):
 
     print(f"Processing image: {image_key}, reviewId: {review_id}")
 
+    allowed_extensions = ['.jpg', '.jpeg', '.png']
+    ext = '.' + image_key.rsplit('.', 1)[-1].lower()
+    if ext not in allowed_extensions:
+        print(f"Unsupported format: {ext}")
+        update_decision(review_id, timestamp, image_key, 'REJECTED',
+                    'unsupported_format', [], [], '')
+        push_metric('REJECTED', 'unknown')
+        return
+        
     # STEP 1 — Moderation check
     moderation_response = rekognition.detect_moderation_labels(
         Image={'S3Object': {'Bucket': UPLOAD_BUCKET, 'Name': image_key}},
