@@ -1,5 +1,7 @@
 # ReviewReko
 
+**[Try out the platform](https://main.d1wca7itzjfmad.amplifyapp.com/)!**
+
 A serverless product review platform with AI-powered image moderation built on AWS. Submitted reviews are automatically screened by Amazon Rekognition before appearing in the public gallery — inappropriate images are rejected with a logged reason, while approved reviews are published with AI-generated descriptions.
 
 ---
