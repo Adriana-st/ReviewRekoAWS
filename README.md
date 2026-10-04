@@ -130,10 +130,7 @@ Single-page Astro application deployed on AWS Amplify. Two active sections contr
 
 ### Amplify Deployments
 
-| Branch | URL |
-|---|---|
-| `main` | https://main.d1wca7itzjfmad.amplifyapp.com |
-| `dev` | https://dev.d1wca7itzjfmad.amplifyapp.com |
+We deployed two branches through Amplify: `dev` for development, as a staging environment, and `main` for production
 
 ### Local Development
 
