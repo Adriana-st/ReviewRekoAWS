@@ -4,6 +4,17 @@
 
 A serverless product review platform with AI-powered image moderation built on AWS. Submitted reviews are automatically screened by Amazon Rekognition before appearing in the public gallery — inappropriate images are rejected with a logged reason, while approved reviews are published with AI-generated descriptions.
 
+![Submitting a review that Rekognition approves, then finding it in the gallery](docs/demo.gif)
+
+*Submit a review with a photo, Rekognition approves it, and it shows up in the gallery.*
+
+[Watch the full demo (8 min)](https://www.youtube.com/watch?v=6hRKj9Bulq0&t=10s)
+
+<p>
+  <img src="docs/gallery.png" width="49%" alt="An approved review in the gallery, with its AI-generated description and labels">
+  <img src="docs/rejected.png" width="49%" alt="A gun photo rejected as Weapons, Violence">
+</p>
+
 ---
 
 ## Architecture Overview
