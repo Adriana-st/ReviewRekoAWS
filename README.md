@@ -6,7 +6,7 @@ A serverless product review platform with AI-powered image moderation built on A
 
 *Submit a review with a photo, Rekognition approves it, and it shows up in the gallery.*
 
-[Watch the full demo (8 min)](https://www.youtube.com/watch?v=6hRKj9Bulq0&t=10s)
+[Watch the full demo (8 min)](https://www.youtube.com/watch?v=6hRKj9Bulq0&t=11s)
 
 <p>
   <img src="docs/gallery.png" width="49%" alt="An approved review in the gallery, with its AI-generated description and labels">
